@@ -81,9 +81,9 @@ validation <- df2[-inTrain,]
 
 ## Predictive modelling and model selection
 
-### Random Forest with cross-validation
+### Prediction with Random Forest (with cross-validation)
 
-```{r rforest, message=FALSE}
+```{r forest, message=FALSE}
 set.seed(95014)
 # set up x and y to avoid slowness of caret() with model syntax
 y <- training[,40]
@@ -100,3 +100,25 @@ registerDoSEQ()
 prf <- predict(fitrf, validation)
 confusionMatrix(prf, as.factor(validation$classe))$overall[1]
 ```
+### Prediction with trees
+```{r trees, message=FALSE}
+library(rattle)
+# cart model
+fitControl1 <- trainControl(method = "cv", number = 5)
+fitdt <- train(classe ~ ., method="rpart", data=training, trControl = fitControl1)
+fancyRpartPlot(fitdt$finalModel)
+# model prediction
+pdt <- predict(fitdt, validation)
+confusionMatrix(pdt, as.factor(validation$classe))$overall[1]
+```
+### Prediction with gradient boost
+```{r boost}
+# model prediction
+fitgbm <- train(classe ~ ., method="gbm", data=training, trControl = fitControl1, verbose = FALSE)
+pgbm <- predict(fitgbm, validation)
+confusionMatrix(pgbm, as.factor(validation$classe))$overall[1]
+```
+
+## Out of sample error
+
+## Final prediction on testing dataset
