@@ -23,23 +23,80 @@ fig_nums("figc", "")
 
 # Executive Summary
 
-This purpose of this report is to predict how well 6 participants aged between 20-28 years perform a Unilateral Dumbbell Biceps curl. Using data from inertial measurement units (IMU) in the users glove, armband, lumbar belt and dumbbell participants were asked to perform one set of 10 repetitions using correct and incorrect weight lifting technique (producing 5 'classes' corresponding to correctly specified execution and 4 common mistakes). The data was explored to produce a prediction model capable of predicting how well the exercise will be performed based on a separate testing dataset.
+This purpose of this report is to predict how well 6 participants aged between 20-28 years perform a Unilateral Dumbbell Biceps curl. Using data from inertial measurement units (IMU) in the users glove, armband, lumbar belt and dumbbell participants were asked to perform one set of 10 repetitions using correct and incorrect weight lifting technique. The resulting data contains 5 'classes' corresponding to correctly specified execution and 4 common mistakes. The data was explored to produce a prediction model capable of predicting how well the exercise will be performed based on a separate testing dataset.
 
 _Note that the `echo = FALSE` parameter has been added to the code chunks to prevent printing of the R code, all of which can be found in the appendix._
 
 ## Summary of the data
 ```{r wle}
-# load the dataset and display the structure
+# load the dataset and display the dimensions of the training dataset
 pml_training <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
 pml_testing <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+dim(pml_training)
+dim(pml_testing)
+```
+Exploration of the training dataset reveals a data frame with 19622 observations of 160 variables.
+
+## Exploratory data analyses for predictor variable selection
+Inspection of the dataset to identify the presence of predictors that are almost constant across samples. These predictors are non-informative and may adversely affect prediction models.The report will use the nearZeroVar function in the caret package to remove predictors that have one unique value across samples (zero variance predictors) and predictors that have both 1) few unique values relative to the number of samples and 2) large ratio of the frequency of the most common value to the frequency of the second most common value (near-zero variance predictors). In addition, predictor variables that contain NA or are blank will be removed because there are too many missing values to impute.
+
+```{r missval, message=FALSE}
+library(caret)
+library(dplyr)
+# identifying and removing zero- and near zero-variance predictors (these may cause issues when subsampling)
+nearZeroVar(pml_training)
+df1 <- pml_training[,-nearZeroVar(pml_training)]
+# identifying and removing remove columns with missing values
+df1 <- df1 %>% select_if(~ !any(is.na(.) | . == "")) 
+# remove first 6 columns that are not important
+df1 <- df1[,-(1:6)] 
+dim(df1)
 ```
 
-## Including Plots
+## Correlation matrix to analyse significance of remaining predictor variables
+The analyses will identify and remove predictor variables that are highly correlated (and do not add value to the prediction model).
 
-You can also embed plots, for example:
+```{r cor, message=FALSE}
+library(corrplot)
+# a correlation of the predictors (excluding 'classe')
+df1_cor <- cor(df1[,-53])
+summary(df1_cor[upper.tri(df1_cor)]) # max = 0.98
+# use findCorrelation function to determine the highly correlated predictor variables
+cor.index <- findCorrelation(df1_cor, cutoff=0.8)
+df2 <- df1[, -cor.index]
+dim(df2)
+df2_cor <- cor(df2[,-40])
+# and display the resulting correlation matrix
+diag(df2_cor) <- 0
+corrplot(df2_cor)
+```
+## Partition the data into separate training and validation datasets
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r partition, message=FALSE}
+set.seed(32323)
+inTrain <- createDataPartition(df2$classe, p = 0.6, list = FALSE)
+training <- df2[ inTrain,]
+validation <- df2[-inTrain,]
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+## Predictive modelling and model selection
+
+### Random Forest with cross-validation
+
+```{r rforest, message=FALSE}
+set.seed(95014)
+# set up x and y to avoid slowness of caret() with model syntax
+y <- training[,40]
+x <- training[,-40]
+# use parallel processing capabilities to speed up performance
+library(parallel)
+library(doParallel)
+cluster <- makeCluster(detectCores() - 1) # leave 1 core for OS
+registerDoParallel(cluster)
+fitControl <- trainControl(method = "cv", number = 5, allowParallel = TRUE)
+fitrf <- train(x,y, method="rf", data=training, trControl = fitControl, tuneGrid=data.frame(mtry=7))
+stopCluster(cluster)
+registerDoSEQ()
+prf <- predict(fitrf, validation)
+confusionMatrix(prf, as.factor(validation$classe))$overall[1]
+```
