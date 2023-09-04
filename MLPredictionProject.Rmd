@@ -16,31 +16,33 @@ knitr::opts_current$get('label')
 # use captioner to add figure number and caption
 library(captioner)
 fig_nums <- captioner()
-fig_nums("figa", "")
-fig_nums("figb", "")
-fig_nums("figc", "")
+fig_nums("figa", "Correlation matrix after the removal of the highly correlated predictor variables")
+fig_nums("figb", "Plot of the classification tree model")
 ```
 
 # Executive Summary
 
-This purpose of this report is to predict how well 6 participants aged between 20-28 years perform a Unilateral Dumbbell Biceps curl. Using data from inertial measurement units (IMU) in the users glove, armband, lumbar belt and dumbbell participants were asked to perform one set of 10 repetitions using correct and incorrect weight lifting technique. The resulting data contains 5 'classes' corresponding to correctly specified execution and 4 common mistakes. The data was explored to produce a prediction model capable of predicting how well the exercise will be performed based on a separate testing dataset.
+This purpose of this report is to predict how well 6 participants aged between 20-28 years perform a Unilateral Dumbbell Biceps curl. Using data from inertial measurement units (IMU) in the users glove, armband, lumbar belt and dumbbell participants were asked to perform one set of 10 repetitions using correct and incorrect weight lifting technique. The resulting data contains 5 'classes' corresponding to correctly specified execution and 4 common mistakes. The data was explored, and trained using 3 prediction modelling techniques namely, random forest, classification trees, and gradient boosting. The random forest technique was selected because of its high level of accuracy to produce a prediction model capable of predicting how well the exercise will be performed based on a separate testing dataset.
 
-_Note that the `echo = FALSE` parameter has been added to the code chunks to prevent printing of the R code, all of which can be found in the appendix._
+*Note that the `echo = FALSE` parameter has been added to the code chunks to prevent printing of the R code, all of which can be found in the appendix.*
 
 ## Summary of the data
-```{r wle}
+
+```{r wle, echo=FALSE}
 # load the dataset and display the dimensions of the training dataset
 pml_training <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
 pml_testing <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
 dim(pml_training)
 dim(pml_testing)
 ```
+
 Exploration of the training dataset reveals a data frame with 19622 observations of 160 variables.
 
 ## Exploratory data analyses for predictor variable selection
+
 Inspection of the dataset to identify the presence of predictors that are almost constant across samples. These predictors are non-informative and may adversely affect prediction models.The report will use the nearZeroVar function in the caret package to remove predictors that have one unique value across samples (zero variance predictors) and predictors that have both 1) few unique values relative to the number of samples and 2) large ratio of the frequency of the most common value to the frequency of the second most common value (near-zero variance predictors). In addition, predictor variables that contain NA or are blank will be removed because there are too many missing values to impute.
 
-```{r missval, message=FALSE}
+```{r missval, message=FALSE, echo=FALSE}
 library(caret)
 library(dplyr)
 # identifying and removing zero- and near zero-variance predictors (these may cause issues when subsampling)
@@ -54,9 +56,10 @@ dim(df1)
 ```
 
 ## Correlation matrix to analyse significance of remaining predictor variables
+
 The analyses will identify and remove predictor variables that are highly correlated (and do not add value to the prediction model).
 
-```{r cor, message=FALSE}
+```{r cor, message=FALSE, fig.cap=fig_nums("figa"), echo=FALSE}
 library(corrplot)
 # a correlation of the predictors (excluding 'classe')
 df1_cor <- cor(df1[,-53])
@@ -64,15 +67,23 @@ summary(df1_cor[upper.tri(df1_cor)]) # max = 0.98
 # use findCorrelation function to determine the highly correlated predictor variables
 cor.index <- findCorrelation(df1_cor, cutoff=0.8)
 df2 <- df1[, -cor.index]
-dim(df2)
 df2_cor <- cor(df2[,-40])
 # and display the resulting correlation matrix
 diag(df2_cor) <- 0
 corrplot(df2_cor)
 ```
-## Partition the data into separate training and validation datasets
 
-```{r partition, message=FALSE}
+## Selection of the most significant predictor variables
+
+Following the analysis and selection of the most significant predictor variables, the dataset dimensions and been reduced to 40 columns (39 predictor variables and 1 outcome variable).
+
+```{r dim, echo=FALSE}
+dim(df2)
+```
+
+## Partition the remaining variables from the original training dataset further into separate training and validation datasets
+
+```{r partition, message=FALSE, echo=FALSE}
 set.seed(32323)
 inTrain <- createDataPartition(df2$classe, p = 0.6, list = FALSE)
 training <- df2[ inTrain,]
@@ -81,9 +92,19 @@ validation <- df2[-inTrain,]
 
 ## Predictive modelling and model selection
 
-### Prediction with Random Forest (with cross-validation)
+The purpose of these analyses is to predict one of the 'classe' outcomes corresponding to the execution of a Unilateral Dumbbell Biceps curl. Therefore, it is a classification (rather than a regression) type problem and for this reason the analyses will use decision tree and random forest classification algorithms that are best suited to this type of data analysis and the output/outcome is a discrete value.
 
-```{r forest, message=FALSE}
+### Cross-validation for estimation of prediction error
+
+Cross-validation is a technique for evaluating machine learning models by training several models on subsets of the available input data (training dataset in this analyses) and evaluating them on the complementary subset of the data (validation dataset). It is used to detect overfitting, i.e., failing to generalize a pattern that gives accurate predictions for training data but not for new data.
+
+This analyses uses the k-fold, where k = 5, cross-validation for system processing reasons. The k-fold cross validation method involves splitting the training dataset into 5 subsets. Each subset is isolated in turn while the model is trained on all other subsets. The accuracy is determined for each subset in the dataset and an overall accuracy estimate is calculated for the model.
+
+### Prediction with Random Forest
+
+When used for classification, a random forest obtains a class vote from each tree, and then classifies using majority vote.
+
+```{r forest, message=FALSE, cache=TRUE, echo=FALSE}
 set.seed(95014)
 # set up x and y to avoid slowness of caret() with model syntax
 y <- training[,40]
@@ -100,25 +121,63 @@ registerDoSEQ()
 prf <- predict(fitrf, validation)
 confusionMatrix(prf, as.factor(validation$classe))$overall[1]
 ```
-### Prediction with trees
-```{r trees, message=FALSE}
+
+### Prediction with classification trees
+
+```{r trees, message=FALSE, cache=TRUE, fig.cap=fig_nums("figb"), echo=FALSE}
 library(rattle)
 # cart model
 fitControl1 <- trainControl(method = "cv", number = 5)
 fitdt <- train(classe ~ ., method="rpart", data=training, trControl = fitControl1)
-fancyRpartPlot(fitdt$finalModel)
+fancyRpartPlot(fitdt$finalModel, sub = "", caption = "")
 # model prediction
 pdt <- predict(fitdt, validation)
 confusionMatrix(pdt, as.factor(validation$classe))$overall[1]
 ```
-### Prediction with gradient boost
-```{r boost}
+
+### Prediction with gradient boosting
+
+```{r boost, cache=TRUE, echo=FALSE}
 # model prediction
 fitgbm <- train(classe ~ ., method="gbm", data=training, trControl = fitControl1, verbose = FALSE)
 pgbm <- predict(fitgbm, validation)
 confusionMatrix(pgbm, as.factor(validation$classe))$overall[1]
 ```
 
-## Out of sample error
+### Summary of accuracy
+
+```{r accuracy, message=FALSE, echo=FALSE}
+sumacc <- data.frame(Random.Forest=confusionMatrix(prf, as.factor(validation$classe))$overall[1], 
+                Gradient.Boosting=confusionMatrix(pgbm, as.factor(validation$classe))$overall[1],
+                Classification.Tree=confusionMatrix(pdt, as.factor(validation$classe))$overall[1])
+library(knitr)
+kable(sumacc, caption = "Summary of Accuracy", digits = 2)
+```
+
+### Summary of out-of-sample error rates
+
+Sometimes called generalization error, it is the error rate you get on a new data set. Estimate an out of sample error by aggregating the accuracy analysis across a series of training runs and subtracting from 1.
+
+```{r resample, echo=FALSE}
+oose <- data.frame(Random.Forest=1-(confusionMatrix(prf, as.factor(validation$classe))$overall[1]), 
+                Gradient.Boosting=1-(confusionMatrix(pgbm, as.factor(validation$classe))$overall[1]),
+                Classification.Tree=1-(confusionMatrix(pdt, as.factor(validation$classe))$overall[1]))
+kable(oose, caption = "Out-of-sample error rates", digits = 3)
+```
+
+## Final model selection
+
+The random forest model has been selected because of its high level of accuracy to produce a prediction model capable of predicting how well the exercise will be performed based on the entirely separate testing dataset.
 
 ## Final prediction on testing dataset
+
+```{r final, echo=FALSE}
+prf_final <- predict(fitrf, pml_testing)
+prf_final
+```
+\newpage
+
+# Appendix A: All R code for this report
+
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+```
