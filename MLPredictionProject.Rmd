@@ -1,12 +1,12 @@
 ---
-title: "Practical Machine Learning - A prediction model for weight lifting exercises"
+title: "Practical Machine Learning - A prediction model for how well participants perform a unilateral dumbbell biceps curl weightlifting exercise."
 author: "Ian Dobbs"
 date: "`r Sys.Date()`"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
-# knitr options
+# knitr global options
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, fig.cap = TRUE, fig.align = "center",
                       fig.path="figures/", options(scipen=999))
 knitr::opts_current$get('label')
@@ -29,61 +29,69 @@ This purpose of this report is to predict how well 6 participants aged between 2
 ## Summary of the data
 
 ```{r wle, echo=FALSE}
-# load the dataset and display the dimensions of the training dataset
+# load the dataset and display the dimensions of the training and testing dataset
 pml_training <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
 pml_testing <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
 dim(pml_training)
 dim(pml_testing)
 ```
 
-Exploration of the training dataset reveals a data frame with 19622 observations of 160 variables.
+Exploration of the training dataset reveals a data frame with 19622 observations of 160 variables and a testing dataset of 20 observations of 160 variables. The testing dataset will be set aside to test the final prediction model.
 
 ## Exploratory data analyses for predictor variable selection
 
-Inspection of the dataset to identify the presence of predictors that are almost constant across samples. These predictors are non-informative and may adversely affect prediction models.The report will use the nearZeroVar function in the caret package to remove predictors that have one unique value across samples (zero variance predictors) and predictors that have both 1) few unique values relative to the number of samples and 2) large ratio of the frequency of the most common value to the frequency of the second most common value (near-zero variance predictors). In addition, predictor variables that contain NA or are blank will be removed because there are too many missing values to impute.
+Inspection of the dataset to identify the presence of predictors that are almost constant across samples. These predictors are non-informative and may adversely affect prediction models.The report will use the `nearZeroVar()` function in `caret` to remove predictors that have one unique value across samples (zero variance predictors) and predictors that have both 1) few unique values relative to the number of samples and 2) large ratio of the frequency of the most common value to the frequency of the second most common value (near-zero variance predictors). In addition, predictor variables that contain NA or are blank will be removed because there are too many missing values to impute.
+The following variables possess near zero variance and will be excluded from the dataset.
 
 ```{r missval, message=FALSE, echo=FALSE}
+# load libraries to remove unnecessary variables
 library(caret)
 library(dplyr)
 # identifying and removing zero- and near zero-variance predictors (these may cause issues when subsampling)
 nearZeroVar(pml_training)
 df1 <- pml_training[,-nearZeroVar(pml_training)]
-# identifying and removing remove columns with missing values
+# identifying and removing columns with missing values
 df1 <- df1 %>% select_if(~ !any(is.na(.) | . == "")) 
 # remove first 6 columns that are not important
 df1 <- df1[,-(1:6)] 
 dim(df1)
 ```
+Removal of variables with no value or missing vales has reduced the number of predictor variables to 53.
 
 ## Correlation matrix to analyse significance of remaining predictor variables
 
-The analyses will identify and remove predictor variables that are highly correlated (and do not add value to the prediction model).
+The analyses will identify and remove predictor variables that are highly correlated (and do not add value to the prediction model). Before processing the data has a Max. correlation of 0.98 indicating the existence of highly correlated variables. It will use the `findCorrelation()` function in `caret` to determine the highly correlated predictor variables and remove them.
 
 ```{r cor, message=FALSE, fig.cap=fig_nums("figa"), echo=FALSE}
 library(corrplot)
-# a correlation of the predictors (excluding 'classe')
+# a correlation of the predictors (excluding 'classe') and summary
 df1_cor <- cor(df1[,-53])
 summary(df1_cor[upper.tri(df1_cor)]) # max = 0.98
-# use findCorrelation function to determine the highly correlated predictor variables
+# use findCorrelation() function to determine the highly correlated predictor variables
 cor.index <- findCorrelation(df1_cor, cutoff=0.8)
+# remove the highly correlated variables 
 df2 <- df1[, -cor.index]
 df2_cor <- cor(df2[,-40])
-# and display the resulting correlation matrix
+# and display the resulting correlation matrix and summary
 diag(df2_cor) <- 0
 corrplot(df2_cor)
+summary(df2_cor[upper.tri(df2_cor)]) 
 ```
+After removal of the highly correlated variables (cutoff set at 0.8) the Max. correlation has been reduced to 0.78
 
 ## Selection of the most significant predictor variables
 
 Following the analysis and selection of the most significant predictor variables, the dataset dimensions and been reduced to 40 columns (39 predictor variables and 1 outcome variable).
 
 ```{r dim, echo=FALSE}
+# display dimensions of the dataset before creating the partition for training
 dim(df2)
 ```
 
 ## Partition the remaining variables from the original training dataset further into separate training and validation datasets
 
 ```{r partition, message=FALSE, echo=FALSE}
+# create partitioned data with a 60/40 split
 set.seed(32323)
 inTrain <- createDataPartition(df2$classe, p = 0.6, list = FALSE)
 training <- df2[ inTrain,]
@@ -102,9 +110,10 @@ This analyses uses the k-fold, where k = 5, cross-validation for system processi
 
 ### Prediction with Random Forest
 
-When used for classification, a random forest obtains a class vote from each tree, and then classifies using majority vote.
+Random forest builds a large collection of de-correlated trees, and then either vote or average them to get the prediction for a new outcome. When used for classification, as in this case, a random forest obtains a class vote from each tree, and then classifies using majority vote.
 
 ```{r forest, message=FALSE, cache=TRUE, echo=FALSE}
+# set up prediction with random forest (with parallel processing)
 set.seed(95014)
 # set up x and y to avoid slowness of caret() with model syntax
 y <- training[,40]
@@ -118,13 +127,15 @@ fitControl <- trainControl(method = "cv", number = 5, allowParallel = TRUE)
 fitrf <- train(x,y, method="rf", data=training, trControl = fitControl, tuneGrid=data.frame(mtry=7))
 stopCluster(cluster)
 registerDoSEQ()
+# model prediction
 prf <- predict(fitrf, validation)
 confusionMatrix(prf, as.factor(validation$classe))$overall[1]
 ```
 
 ### Prediction with classification trees
-
+Predicting with trees takes the prediction variables used to predict 'classe' and for each of the variables splits the outcome into different groups and then evaluates the homogeneity of the outcome within each group. The model will continue to split until the outcomes that are separated into groups are homogeneous enough, or are small enough, to stop further splitting.
 ```{r trees, message=FALSE, cache=TRUE, fig.cap=fig_nums("figb"), echo=FALSE}
+# set up prediction with classification trees
 library(rattle)
 # cart model
 fitControl1 <- trainControl(method = "cv", number = 5)
@@ -136,10 +147,11 @@ confusionMatrix(pdt, as.factor(validation$classe))$overall[1]
 ```
 
 ### Prediction with gradient boosting
-
+Boosting combines the outputs of many 'weak' classifiers to produce a stronger predictor. The purpose of boosting is to sequentially apply the weak classification algorithm to repeatedly modified versions of the data to produce a sequence of weak classifiers. The predictions from all of them are then combined through a weighted majority vote to produce the final prediction.
 ```{r boost, cache=TRUE, echo=FALSE}
-# model prediction
+# set up prediction with boosting
 fitgbm <- train(classe ~ ., method="gbm", data=training, trControl = fitControl1, verbose = FALSE)
+# model prediction
 pgbm <- predict(fitgbm, validation)
 confusionMatrix(pgbm, as.factor(validation$classe))$overall[1]
 ```
@@ -147,6 +159,7 @@ confusionMatrix(pgbm, as.factor(validation$classe))$overall[1]
 ### Summary of accuracy
 
 ```{r accuracy, message=FALSE, echo=FALSE}
+# summary of accuracy
 sumacc <- data.frame(Random.Forest=confusionMatrix(prf, as.factor(validation$classe))$overall[1], 
                 Gradient.Boosting=confusionMatrix(pgbm, as.factor(validation$classe))$overall[1],
                 Classification.Tree=confusionMatrix(pdt, as.factor(validation$classe))$overall[1])
@@ -159,6 +172,7 @@ kable(sumacc, caption = "Summary of Accuracy", digits = 2)
 Sometimes called generalization error, it is the error rate you get on a new data set. Estimate an out of sample error by aggregating the accuracy analysis across a series of training runs and subtracting from 1.
 
 ```{r resample, echo=FALSE}
+# summary of out-of-sample errors (1-accuracy)
 oose <- data.frame(Random.Forest=1-(confusionMatrix(prf, as.factor(validation$classe))$overall[1]), 
                 Gradient.Boosting=1-(confusionMatrix(pgbm, as.factor(validation$classe))$overall[1]),
                 Classification.Tree=1-(confusionMatrix(pdt, as.factor(validation$classe))$overall[1]))
@@ -172,6 +186,7 @@ The random forest model has been selected because of its high level of accuracy 
 ## Final prediction on testing dataset
 
 ```{r final, echo=FALSE}
+# final model prediction and result
 prf_final <- predict(fitrf, pml_testing)
 prf_final
 ```
