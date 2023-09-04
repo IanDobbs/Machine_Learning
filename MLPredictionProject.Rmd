@@ -26,7 +26,7 @@ This purpose of this report is to predict how well 6 participants aged between 2
 
 *Note that the `echo = FALSE` parameter has been added to the code chunks to prevent printing of the R code, all of which can be found in the appendix.*
 
-## Summary of the data
+### Summary of the data
 
 ```{r wle, echo=FALSE}
 # load the dataset and display the dimensions of the training and testing dataset
@@ -38,7 +38,7 @@ dim(pml_testing)
 
 Exploration of the training dataset reveals a data frame with 19622 observations of 160 variables and a testing dataset of 20 observations of 160 variables. The testing dataset will be set aside to test the final prediction model.
 
-## Exploratory data analyses for predictor variable selection
+### Exploratory data analyses for predictor variable selection
 
 Inspection of the dataset to identify the presence of predictors that are almost constant across samples. These predictors are non-informative and may adversely affect prediction models.The report will use the `nearZeroVar()` function in `caret` to remove predictors that have one unique value across samples (zero variance predictors) and predictors that have both 1) few unique values relative to the number of samples and 2) large ratio of the frequency of the most common value to the frequency of the second most common value (near-zero variance predictors). In addition, predictor variables that contain NA or are blank will be removed because there are too many missing values to impute.
 The following variables possess near zero variance and will be excluded from the dataset.
@@ -58,7 +58,7 @@ dim(df1)
 ```
 Removal of variables with no value or missing vales has reduced the number of predictor variables to 53.
 
-## Correlation matrix to analyse significance of remaining predictor variables
+### Correlation matrix to analyse significance of remaining predictor variables
 
 The analyses will identify and remove predictor variables that are highly correlated (and do not add value to the prediction model). Before processing the data has a Max. correlation of 0.98 indicating the existence of highly correlated variables. It will use the `findCorrelation()` function in `caret` to determine the highly correlated predictor variables and remove them.
 
@@ -79,7 +79,7 @@ summary(df2_cor[upper.tri(df2_cor)])
 ```
 After removal of the highly correlated variables (cutoff set at 0.8) the Max. correlation has been reduced to 0.78
 
-## Selection of the most significant predictor variables
+### Selection of the most significant predictor variables
 
 Following the analysis and selection of the most significant predictor variables, the dataset dimensions and been reduced to 40 columns (39 predictor variables and 1 outcome variable).
 
@@ -88,7 +88,7 @@ Following the analysis and selection of the most significant predictor variables
 dim(df2)
 ```
 
-## Partition the remaining variables from the original training dataset further into separate training and validation datasets
+### Partition the remaining variables from the original training dataset further into separate training and validation datasets
 
 ```{r partition, message=FALSE, echo=FALSE}
 # create partitioned data with a 60/40 split
@@ -98,7 +98,7 @@ training <- df2[ inTrain,]
 validation <- df2[-inTrain,]
 ```
 
-## Predictive modelling and model selection
+### Predictive modelling and model selection
 
 The purpose of these analyses is to predict one of the 'classe' outcomes corresponding to the execution of a Unilateral Dumbbell Biceps curl. Therefore, it is a classification (rather than a regression) type problem and for this reason the analyses will use decision tree and random forest classification algorithms that are best suited to this type of data analysis and the output/outcome is a discrete value.
 
@@ -179,11 +179,11 @@ oose <- data.frame(Random.Forest=1-(confusionMatrix(prf, as.factor(validation$cl
 kable(oose, caption = "Out-of-sample error rates", digits = 3)
 ```
 
-## Final model selection
+### Final model selection
 
 The random forest model has been selected because of its high level of accuracy to produce a prediction model capable of predicting how well the exercise will be performed based on the entirely separate testing dataset.
 
-## Final prediction on testing dataset
+### Final prediction on testing dataset
 
 ```{r final, echo=FALSE}
 # final model prediction and result
@@ -192,7 +192,10 @@ prf_final
 ```
 \newpage
 
-# Appendix A: All R code for this report
+### Appendix A: All R code for this report
 
 ```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
 ```
+
+### Bibliography
+Hastie, T., Tibshirani, R., & Friedman, J. H. (2009). The elements of statistical learning: data mining, inference, and prediction. 2nd ed. New York, Springer.
